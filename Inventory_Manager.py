@@ -200,6 +200,7 @@ FRSTATUS_OPTIONS = ["CONSIGNMENT OWNED", "PRACTICE OWNED"]
 TAXPC_OPTIONS = [f"GST {i}%" for i in range(1, 21)]
 SIZE_OPTIONS = [f"{i:02d}-{j:02d}" for i in range(100) for j in range(100)]
 
+# --- Session state initialization ---
 if "add_product_expanded" not in st.session_state:
     st.session_state["add_product_expanded"] = False
 if "barcode" not in st.session_state:
@@ -239,27 +240,24 @@ st.title("Inventory Manager")
 st.markdown("#### Generate Unique Barcodes")
 btn_col1, btn_col2 = st.columns(2)
 with btn_col1:
-    if st.button("Generate Barcode", key="generate_barcode_btn"):
-        st.session_state["barcode"] = generate_unique_barcode(df)
-        st.session_state["barcode_textinput"] = st.session_state["barcode"]
+    if st.button("Generate Barcode"):
+        st.session_state["barcode_textinput"] = generate_unique_barcode(df)
         st.session_state["add_product_expanded"] = True
 with btn_col2:
     supplier_val = st.text_input(
-        "Enter Supplier for Framecode Generation",
-        value=st.session_state.get("supplier_for_framecode", ""),
+        "Supplier for Framecode Generation",
         key="supplier_for_framecode",
-        on_change=None,
     )
-    if st.button("Generate Framecode", key="generate_framecode_btn"):
+    if st.button("Generate Framecode"):
         if st.session_state["supplier_for_framecode"]:
             st.session_state["framecode"] = generate_framecode(st.session_state["supplier_for_framecode"], df)
             st.session_state["add_product_expanded"] = True
         else:
             st.warning("⚠️ Please enter a supplier name first.")
 
-if st.session_state["barcode"]:
+if st.session_state["barcode_textinput"]:
     st.markdown("#### Barcode Image")
-    img_buffer = generate_barcode_image(st.session_state["barcode"])
+    img_buffer = generate_barcode_image(st.session_state["barcode_textinput"])
     if img_buffer:
         st.image(img_buffer, width=220)
 
@@ -285,7 +283,7 @@ with st.expander("➕ Add a New Product", expanded=st.session_state["add_product
                     )
                 elif header == framecode_col:
                     input_values[header] = st.text_input(
-                        "FRAMENUM", value=st.session_state["framecode"], key=unique_key, help="Unique product frame code"
+                        "FRAMENUM", key="framecode", help="Unique product frame code"
                     )
                 elif header.upper() == "MANUFACT":
                     input_values[header] = st.text_input("MANUFACTURER", value=smart_suggestion, key=unique_key)
@@ -335,7 +333,7 @@ with st.expander("➕ Add a New Product", expanded=st.session_state["add_product
             required_fields = [barcode_col, framecode_col]
             missing = [field for field in required_fields if field in visible_headers and not input_values.get(field)]
             barcode_cleaned = clean_barcode(st.session_state["barcode_textinput"])
-            framecode_cleaned = clean_barcode(input_values.get(framecode_col, ""))
+            framecode_cleaned = clean_barcode(st.session_state["framecode"])
             df_barcodes_cleaned = df[barcode_col].map(clean_barcode)
             df_framecodes_cleaned = df[framecode_col].map(clean_barcode)
             if missing:
@@ -348,7 +346,9 @@ with st.expander("➕ Add a New Product", expanded=st.session_state["add_product
                 new_row = {}
                 for col in headers:
                     if col == barcode_col:
-                        val = clean_barcode(st.session_state["barcode_textinput"])
+                        val = barcode_cleaned
+                    elif col == framecode_col:
+                        val = framecode_cleaned
                     elif col in input_values:
                         val = input_values[col]
                         if col == "AVAILFROM" and isinstance(val, (datetime, pd.Timestamp)):
@@ -371,11 +371,9 @@ with st.expander("➕ Add a New Product", expanded=st.session_state["add_product
                 else:
                     df.to_csv(INVENTORY_FILE, index=False)
                 st.success(f"✅ Product added successfully!")
-                st.session_state["barcode"] = ""
-                st.session_state["barcode_textinput"] = ""
-                st.session_state["framecode"] = ""
-                st.session_state["add_product_expanded"] = False
-                st.rerun()
+                # No auto-clear; user can clear fields manually if needed
+
+# --- The rest of your script (INVENTORY TABLE, DOWNLOADS, EDIT/DELETE, etc.) ---
 
 st.markdown('### Current Inventory')
 df_display = df.copy()
