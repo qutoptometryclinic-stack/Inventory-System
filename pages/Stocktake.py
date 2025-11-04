@@ -286,14 +286,14 @@ if st.session_state.get("pending_duplicate"):
     pending_barcode = pdict["barcode"]
     matching_barcode = pdict.get("matching_barcode")
     st.markdown("### Duplicate product detected")
-    # Render a compact JSON viewer for clarity (cleaner than raw dict)
+    # Render a compact table preview for clarity (replaces raw dict/json view)
     try:
         new_row = df[df[barcode_col] == pending_barcode].iloc[0]
         existing_row = df[df[barcode_col] == matching_barcode].iloc[0] if matching_barcode in df[barcode_col].values else None
         col_new, col_existing = st.columns([1, 1])
         with col_new:
             st.markdown("**New scan**")
-            st.json({
+            st.table(pd.DataFrame([{
                 "BARCODE": pending_barcode,
                 "FRAMENUM": new_row.get("FRAMENUM", ""),
                 "MODEL": new_row.get("MODEL", ""),
@@ -301,11 +301,11 @@ if st.session_state.get("pending_duplicate"):
                 "SIZE": new_row.get("SIZE", ""),
                 "FCOLOUR": new_row.get("FCOLOUR", ""),
                 "FRAMETYPE": new_row.get("FRAMETYPE", "")
-            })
+            }]))
         with col_existing:
             st.markdown("**Already scanned**")
             if existing_row is not None:
-                st.json({
+                st.table(pd.DataFrame([{
                     "BARCODE": matching_barcode,
                     "FRAMENUM": existing_row.get("FRAMENUM", ""),
                     "MODEL": existing_row.get("MODEL", ""),
@@ -313,9 +313,9 @@ if st.session_state.get("pending_duplicate"):
                     "SIZE": existing_row.get("SIZE", ""),
                     "FCOLOUR": existing_row.get("FCOLOUR", ""),
                     "FRAMETYPE": existing_row.get("FRAMETYPE", "")
-                })
+                }]))
             else:
-                st.json({"BARCODE": matching_barcode})
+                st.table(pd.DataFrame([{"BARCODE": matching_barcode}]))
     except Exception:
         st.write("Could not render product preview.")
 
