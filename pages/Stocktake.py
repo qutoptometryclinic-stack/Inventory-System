@@ -45,24 +45,28 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+
 def clean_barcode(val):
     try:
         if pd.isnull(val) or val == "":
             return ""
-        s = str(val).strip().replace('\u200b','').replace('\u00A0','')
+        s = str(val).strip().replace('\u200b', '').replace('\u00A0', '')
         f = float(s)
         s = str(int(f))
         return s
     except:
         return str(val).strip()
 
+
 def force_all_columns_to_string(df):
     for col in df.columns:
         df[col] = df[col].astype(str)
     return df
 
+
 def clean_nans(df):
     return df.replace([pd.NA, 'nan'], '', regex=True)
+
 
 def format_rrp(val):
     try:
@@ -71,43 +75,47 @@ def format_rrp(val):
     except Exception:
         return "$0.00"
 
+
 def clean_for_display(df):
     df = df.copy()
     if "BARCODE" in df.columns:
         df["BARCODE"] = df["BARCODE"].apply(
             lambda x: str(int(float(x))) if pd.notnull(x)
-            and str(x).replace('.','',1).isdigit()
+            and str(x).replace('.', '', 1).isdigit()
             and float(x).is_integer() else x
         )
     if "QUANTITY" in df.columns:
         df["QUANTITY"] = df["QUANTITY"].apply(
             lambda x: str(int(float(x))) if pd.notnull(x)
-            and str(x).replace('.','',1).isdigit()
+            and str(x).replace('.', '', 1).isdigit()
             and float(x).is_integer() else x
         )
     df = df.replace("nan", "").replace(pd.NA, "")
     return df
 
-# --- Replace VISIBLE_FIELDS with the exact headers you requested ---
+
+# --- Exact header list requested ---
 VISIBLE_FIELDS = [
-    "BARCODE","LOCATION","LOCATION2","PKEY","PKEY0","FRAMENUM","FRAMENUM0","SXFRAME",
-    "QUANTITY","MANUFACT","MODEL","FCOLOUR","SIZE","FRDESC","LOCATION3","STKTAKE",
-    "CHANGE","QTYAPPRO","QTY3","SUPBARCODE","ISTOCKCODE","SUPPLIER","SUPPLIER2",
-    "FRAMETYPE","FRAMEGROUP","TEMPLE","DEPTH","DIAG","BASECURVE","SUNGRX","FROTHER",
-    "FROTHER2","REORDDATE","REORDER","REORDQTY","RRP","EXLISTPR","LISTPRICE","EXCOSTPR",
-    "COSTPRICE","EXPREVCOST","PREVCOST","EXAVGCOST","AVGCOST","DPRECOST","DPREEXCOST",
-    "WSALEET","WSALEIT","APPORDER","LASTSALE2","LASTSALE","FIRSTPUR","LASTPUR","RETURNBY",
-    "DQTY","REFRESH","LASTINV","DISPC","TAXPC","FRSTATUS","FRSTATUS2","QTYONORDER",
-    "QTYONAPPRO","PHOTOEXT","PHOTONAME","LIFESTYLE","LIFECYCLE","RELEASE","AVAILFROM",
-    "AVAILTILL","FRANGE","SPH1","SPH2","CYL1","CYL2","MINPD","BASEC","SRVCHARGE",
-    "EXLISTSRV","LISTSRV","EXRRPSRV","RRPSRV","MODKEY","ORDERAGAIN","PROSUPPLY",
-    "PSSUPFIT","PSCREATED","PSUPDATEAT","USER","MODIFIED","DELFLAG","XFER","PROVISION",
-    "PVINACTIVE","LOGSTR","FGID","SUPSTATUS","LLABORDER","LDOWNLOAD","UUID","NOTE","PHOTO"
+    "BARCODE", "LOCATION", "LOCATION2", "PKEY", "PKEY0", "FRAMENUM", "FRAMENUM0", "SXFRAME",
+    "QUANTITY", "MANUFACT", "MODEL", "FCOLOUR", "SIZE", "FRDESC", "LOCATION3", "STKTAKE",
+    "CHANGE", "QTYAPPRO", "QTY3", "SUPBARCODE", "ISTOCKCODE", "SUPPLIER", "SUPPLIER2",
+    "FRAMETYPE", "FRAMEGROUP", "TEMPLE", "DEPTH", "DIAG", "BASECURVE", "SUNGRX", "FROTHER",
+    "FROTHER2", "REORDDATE", "REORDER", "REORDQTY", "RRP", "EXLISTPR", "LISTPRICE", "EXCOSTPR",
+    "COSTPRICE", "EXPREVCOST", "PREVCOST", "EXAVGCOST", "AVGCOST", "DPRECOST", "DPREEXCOST",
+    "WSALEET", "WSALEIT", "APPORDER", "LASTSALE2", "LASTSALE", "FIRSTPUR", "LASTPUR", "RETURNBY",
+    "DQTY", "REFRESH", "LASTINV", "DISPC", "TAXPC", "FRSTATUS", "FRSTATUS2", "QTYONORDER",
+    "QTYONAPPRO", "PHOTOEXT", "PHOTONAME", "LIFESTYLE", "LIFECYCLE", "RELEASE", "AVAILFROM",
+    "AVAILTILL", "FRANGE", "SPH1", "SPH2", "CYL1", "CYL2", "MINPD", "BASEC", "SRVCHARGE",
+    "EXLISTSRV", "LISTSRV", "EXRRPSRV", "RRPSRV", "MODKEY", "ORDERAGAIN", "PROSUPPLY",
+    "PSSUPFIT", "PSCREATED", "PSUPDATEAT", "USER", "MODIFIED", "DELFLAG", "XFER", "PROVISION",
+    "PVINACTIVE", "LOGSTR", "FGID", "SUPSTATUS", "LLABORDER", "LDOWNLOAD", "UUID", "NOTE", "PHOTO"
 ]
 
-# --- Shared scanned barcodes CSV ---
+
+# --- Shared scanned/unfound CSV paths ---
 SCANNED_FILE = os.path.join(os.path.dirname(__file__), "..", "scanned_barcodes.csv")
 UNFOUND_FILE = os.path.join(os.path.dirname(__file__), "..", "unfound_barcodes.csv")
+
 
 def load_scanned_barcodes():
     if os.path.exists(SCANNED_FILE):
@@ -117,19 +125,24 @@ def load_scanned_barcodes():
             return []
     return []
 
+
 def save_scanned_barcodes(barcodes):
     pd.DataFrame({"barcode": barcodes}).to_csv(SCANNED_FILE, index=False)
+
 
 def load_unfound_barcodes():
     if os.path.exists(UNFOUND_FILE):
         return pd.read_csv(UNFOUND_FILE, dtype={"barcode": str})
     return pd.DataFrame(columns=["barcode", "timestamp"])
 
+
 def save_unfound_barcodes(df):
     df.to_csv(UNFOUND_FILE, index=False)
 
+
 def empty_unfound_barcodes():
     pd.DataFrame(columns=["barcode", "timestamp"]).to_csv(UNFOUND_FILE, index=False)
+
 
 # --- Load inventory ---
 INVENTORY_FOLDER = os.path.join(os.path.dirname(os.path.dirname(__file__)), "Inventory")
@@ -146,6 +159,7 @@ if len(inventory_files) > 1:
     selected_file = st.selectbox("Select inventory file to use:", inventory_files)
 INVENTORY_FILE = os.path.join(INVENTORY_FOLDER, selected_file)
 
+
 def load_inventory():
     if os.path.exists(INVENTORY_FILE):
         if INVENTORY_FILE.lower().endswith('.xlsx'):
@@ -161,29 +175,28 @@ def load_inventory():
         st.error(f"Inventory file '{INVENTORY_FILE}' not found.")
         st.stop()
 
+
 df = load_inventory()
 barcode_col = "BARCODE"
 if barcode_col not in df.columns:
     st.error(f"No {barcode_col} column found in your inventory file!")
     st.stop()
 
-# Optional: Normalize common column name variants from inventory to expected names
+# Normalize some common alternate names (extend as needed)
 COLUMN_NAME_MAP = {
     "F GROUP": "FRAMEGROUP",
     "COST PRICE": "COSTPRICE",
-    # Add other mappings if your inventory has alternate names
 }
 df = df.rename(columns={k: v for k, v in COLUMN_NAME_MAP.items() if k in df.columns})
 
-# Clean the DataFrame barcodes as strings
+# Ensure barcode column cleaned to string representation
 df[barcode_col] = df[barcode_col].map(clean_barcode).astype(str)
 
 st.title("Stocktake - Scan Barcodes")
 
-# --- Shared scanned barcodes list ---
+# --- Load scanned barcodes and session defaults ---
 scanned_barcodes = load_scanned_barcodes()
 
-# --- Session state defaults ---
 if "last_unfound_barcode" not in st.session_state:
     st.session_state["last_unfound_barcode"] = None
 if "last_success_barcode" not in st.session_state:
@@ -192,12 +205,13 @@ if "confirm_clear_scanned_barcodes" not in st.session_state:
     st.session_state["confirm_clear_scanned_barcodes"] = False
 if "confirm_clear_unfound_barcodes" not in st.session_state:
     st.session_state["confirm_clear_unfound_barcodes"] = False
-# pending_duplicate holds dict: {"barcode": cleaned, "matching_barcode": existing_b, "signature": signature_tuple}
+# pending_duplicate used to persist confirm UI between reruns
 if "pending_duplicate" not in st.session_state:
     st.session_state["pending_duplicate"] = None
 
 # IDENTIFYING FIELDS used to detect same product (adjust as needed)
 IDENTIFYING_FIELDS = ["FRAMENUM", "MODEL", "MANUFACT", "SIZE", "FCOLOUR", "FRAMETYPE"]
+
 
 # --- Scan input using a form (clears on submit) ---
 with st.form("stocktake_scan_form", clear_on_submit=True):
@@ -210,9 +224,6 @@ with st.form("stocktake_scan_form", clear_on_submit=True):
             st.session_state["last_unfound_barcode"] = None
             st.session_state["pending_duplicate"] = None
         elif cleaned in df[barcode_col].values:
-            # If barcode already scanned (exact match) or product duplicate exists among scanned items,
-            # we will produce a pending_duplicate entry so confirm UI appears outside the form.
-
             # Build signature for the newly scanned inventory row
             product_row = df[df[barcode_col] == cleaned].iloc[0]
 
@@ -221,7 +232,7 @@ with st.form("stocktake_scan_form", clear_on_submit=True):
 
             new_sig = make_signature(product_row)
 
-            # Build signatures for already scanned products (those whose barcode maps into df)
+            # Build signatures for already scanned products (only those with barcodes present in inventory)
             scanned_sigs = {}
             for b in scanned_barcodes:
                 if b in df[barcode_col].values:
@@ -237,18 +248,19 @@ with st.form("stocktake_scan_form", clear_on_submit=True):
                     matching_b = b
                     break
 
-            # If the exact barcode string is already present, mark as duplicate too and allow confirm
+            # If the exact barcode string is already present, treat as duplicate too
             if cleaned in scanned_barcodes:
                 duplicate_found = True
-                matching_b = cleaned if matching_b is None else matching_b
+                if matching_b is None:
+                    matching_b = cleaned
 
             if duplicate_found:
+                # Store pending duplicate so confirmation UI can render outside the form
                 st.session_state["pending_duplicate"] = {
                     "barcode": cleaned,
                     "matching_barcode": matching_b,
                     "signature": new_sig
                 }
-                # Do not append yet — wait for user confirm outside the form
                 st.warning("Product already scanned or a product with the same framecode/details exists among scanned items. Confirm below to increment quantity.")
             else:
                 # Normal add (no duplicate)
@@ -267,20 +279,21 @@ with st.form("stocktake_scan_form", clear_on_submit=True):
             st.session_state["last_unfound_barcode"] = cleaned
             st.session_state["pending_duplicate"] = None
 
+
 # --- Duplicate confirmation UI (renders outside the form so it persists) ---
 if st.session_state.get("pending_duplicate"):
     pdict = st.session_state["pending_duplicate"]
     pending_barcode = pdict["barcode"]
     matching_barcode = pdict.get("matching_barcode")
     st.markdown("### Duplicate product detected")
-    # Show a small product preview for both items if possible
+    # Render a compact JSON viewer for clarity (cleaner than raw dict)
     try:
         new_row = df[df[barcode_col] == pending_barcode].iloc[0]
         existing_row = df[df[barcode_col] == matching_barcode].iloc[0] if matching_barcode in df[barcode_col].values else None
         col_new, col_existing = st.columns([1, 1])
         with col_new:
             st.markdown("**New scan**")
-            st.write({
+            st.json({
                 "BARCODE": pending_barcode,
                 "FRAMENUM": new_row.get("FRAMENUM", ""),
                 "MODEL": new_row.get("MODEL", ""),
@@ -292,7 +305,7 @@ if st.session_state.get("pending_duplicate"):
         with col_existing:
             st.markdown("**Already scanned**")
             if existing_row is not None:
-                st.write({
+                st.json({
                     "BARCODE": matching_barcode,
                     "FRAMENUM": existing_row.get("FRAMENUM", ""),
                     "MODEL": existing_row.get("MODEL", ""),
@@ -302,7 +315,7 @@ if st.session_state.get("pending_duplicate"):
                     "FRAMETYPE": existing_row.get("FRAMETYPE", "")
                 })
             else:
-                st.write({"BARCODE": matching_barcode})
+                st.json({"BARCODE": matching_barcode})
     except Exception:
         st.write("Could not render product preview.")
 
@@ -326,6 +339,7 @@ if st.session_state.get("pending_duplicate"):
                 st.rerun()
             elif hasattr(st, "experimental_rerun"):
                 st.experimental_rerun()
+
 
 # --- Show details for last successful barcode scanned (persists after rerun, compact layout) ---
 if st.session_state.get("last_success_barcode"):
@@ -366,6 +380,7 @@ if st.session_state.get("last_success_barcode"):
     else:
         st.session_state["last_success_barcode"] = None
 
+
 # --- Show button to add last unfound barcode (outside the form) ---
 if st.session_state.get("last_unfound_barcode", None):
     cleaned = st.session_state["last_unfound_barcode"]
@@ -381,6 +396,7 @@ if st.session_state.get("last_unfound_barcode", None):
             st.rerun()
         elif hasattr(st, "experimental_rerun"):
             st.experimental_rerun()
+
 
 # --- Empty Table Functionality with Confirmation Prompt for scanned barcodes ---
 st.markdown("#### Manage Scanned Products Table")
@@ -407,6 +423,7 @@ if st.session_state.get("confirm_clear_scanned_barcodes", False):
             if st.button("Cancel", key="cancel_empty_scanned_btn"):
                 st.session_state["confirm_clear_scanned_barcodes"] = False
 
+
 # --- Optional: Show missing items ---
 def format_inventory_table(input_df):
     df_disp = input_df.copy()
@@ -420,6 +437,7 @@ def format_inventory_table(input_df):
     # Reindex to the exact VISIBLE_FIELDS order, creating missing columns with empty strings
     df_disp = df_disp.reindex(columns=VISIBLE_FIELDS).fillna("").replace("nan", "").replace(pd.NA, "")
     return df_disp
+
 
 if st.checkbox("Show missing products (in inventory but not scanned)"):
     missing_df = df[~df[barcode_col].isin(scanned_barcodes)]
@@ -441,6 +459,7 @@ if st.checkbox("Show missing products (in inventory but not scanned)"):
             file_name="stocktake_missing.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
 
 # --- Table of scanned products as ONE table, most recent scan on top ---
 ordered_barcodes = list(reversed(scanned_barcodes))
@@ -509,6 +528,7 @@ if not scanned_df.empty:
     )
 else:
     st.info("No scanned products to display.")
+
 
 # --- Unfound Barcodes Table at the Bottom w/ empty functionality ---
 st.markdown("### Unfound Barcodes Table")
