@@ -209,12 +209,11 @@ with st.form("stocktake_scan_form", clear_on_submit=True):
             st.warning("Please scan or enter a barcode.")
             st.session_state["last_unfound_barcode"] = None
             st.session_state["pending_duplicate"] = None
-        elif cleaned in scanned_barcodes:
-            st.warning("Barcode already scanned.")
-            st.session_state["last_unfound_barcode"] = None
-            st.session_state["pending_duplicate"] = None
         elif cleaned in df[barcode_col].values:
-            # Found in inventory but not scanned yet -> detect duplicate product signature
+            # If barcode already scanned (exact match) or product duplicate exists among scanned items,
+            # we will produce a pending_duplicate entry so confirm UI appears outside the form.
+
+            # Build signature for the newly scanned inventory row
             product_row = df[df[barcode_col] == cleaned].iloc[0]
 
             def make_signature(row):
@@ -222,14 +221,14 @@ with st.form("stocktake_scan_form", clear_on_submit=True):
 
             new_sig = make_signature(product_row)
 
-            # Build signatures for already scanned products (only those whose barcode maps into df)
+            # Build signatures for already scanned products (those whose barcode maps into df)
             scanned_sigs = {}
             for b in scanned_barcodes:
                 if b in df[barcode_col].values:
                     r = df[df[barcode_col] == b].iloc[0]
                     scanned_sigs[b] = make_signature(r)
 
-            # Check for a matching signature among scanned items
+            # Find a matching scanned barcode by signature if any
             duplicate_found = False
             matching_b = None
             for b, sig in scanned_sigs.items():
@@ -238,16 +237,21 @@ with st.form("stocktake_scan_form", clear_on_submit=True):
                     matching_b = b
                     break
 
+            # If the exact barcode string is already present, mark as duplicate too and allow confirm
+            if cleaned in scanned_barcodes:
+                duplicate_found = True
+                matching_b = cleaned if matching_b is None else matching_b
+
             if duplicate_found:
-                # Store pending duplicate so the confirmation UI can render outside the form
                 st.session_state["pending_duplicate"] = {
                     "barcode": cleaned,
                     "matching_barcode": matching_b,
                     "signature": new_sig
                 }
-                st.warning("Product with the same framecode/details has already been scanned. Confirm below to increment quantity.")
+                # Do not append yet — wait for user confirm outside the form
+                st.warning("Product already scanned or a product with the same framecode/details exists among scanned items. Confirm below to increment quantity.")
             else:
-                # Normal add
+                # Normal add (no duplicate)
                 scanned_barcodes.append(str(cleaned))
                 save_scanned_barcodes(scanned_barcodes)
                 st.success(f"Added barcode: {cleaned}")
