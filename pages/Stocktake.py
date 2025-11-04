@@ -1,10 +1,10 @@
-import streamlit as st
+ import streamlit as st
 import pandas as pd
 import os
 import io
 from datetime import datetime
 
-st.set_page_config(layout="wide")  # <--- Add this line right here!
+st.set_page_config(layout="wide")  # Always use wide mode
 
 # Barcode image generation
 import barcode
@@ -80,11 +80,21 @@ def clean_for_display(df):
     df = df.replace("nan", "").replace(pd.NA, "").replace(float("nan"), "")
     return df
 
+# --- Replace VISIBLE_FIELDS with the exact headers you requested ---
 VISIBLE_FIELDS = [
-    "BARCODE", "LOCATION", "FRAMENUM", "MANUFACT", "MODEL", "SIZE",
-    "FCOLOUR", "FRAMETYPE", "F GROUP", "SUPPLIER", "QUANTITY", "F TYPE", "TEMPLE",
-    "DEPTH", "DIAG", "BASECURVE", "RRP", "EXCOSTPR", "COST PRICE", "TAXPC",
-    "FRSTATUS", "AVAILFROM", "NOTE"
+    "BARCODE","LOCATION","LOCATION2","PKEY","PKEY0","FRAMENUM","FRAMENUM0","SXFRAME",
+    "QUANTITY","MANUFACT","MODEL","FCOLOUR","SIZE","FRDESC","LOCATION3","STKTAKE",
+    "CHANGE","QTYAPPRO","QTY3","SUPBARCODE","ISTOCKCODE","SUPPLIER","SUPPLIER2",
+    "FRAMETYPE","FRAMEGROUP","TEMPLE","DEPTH","DIAG","BASECURVE","SUNGRX","FROTHER",
+    "FROTHER2","REORDDATE","REORDER","REORDQTY","RRP","EXLISTPR","LISTPRICE","EXCOSTPR",
+    "COSTPRICE","EXPREVCOST","PREVCOST","EXAVGCOST","AVGCOST","DPRECOST","DPREEXCOST",
+    "WSALEET","WSALEIT","APPORDER","LASTSALE2","LASTSALE","FIRSTPUR","LASTPUR","RETURNBY",
+    "DQTY","REFRESH","LASTINV","DISPC","TAXPC","FRSTATUS","FRSTATUS2","QTYONORDER",
+    "QTYONAPPRO","PHOTOEXT","PHOTONAME","LIFESTYLE","LIFECYCLE","RELEASE","AVAILFROM",
+    "AVAILTILL","FRANGE","SPH1","SPH2","CYL1","CYL2","MINPD","BASEC","SRVCHARGE",
+    "EXLISTSRV","LISTSRV","EXRRPSRV","RRPSRV","MODKEY","ORDERAGAIN","PROSUPPLY",
+    "PSSUPFIT","PSCREATED","PSUPDATEAT","USER","MODIFIED","DELFLAG","XFER","PROVISION",
+    "PVINACTIVE","LOGSTR","FGID","SUPSTATUS","LLABORDER","LDOWNLOAD","UUID","NOTE","PHOTO"
 ]
 
 # --- Shared scanned barcodes CSV ---
@@ -93,7 +103,10 @@ UNFOUND_FILE = os.path.join(os.path.dirname(__file__), "..", "unfound_barcodes.c
 
 def load_scanned_barcodes():
     if os.path.exists(SCANNED_FILE):
-        return pd.read_csv(SCANNED_FILE)["barcode"].astype(str).tolist()
+        try:
+            return pd.read_csv(SCANNED_FILE)["barcode"].astype(str).tolist()
+        except Exception:
+            return []
     return []
 
 def save_scanned_barcodes(barcodes):
@@ -138,6 +151,15 @@ barcode_col = "BARCODE"
 if barcode_col not in df.columns:
     st.error(f"No {barcode_col} column found in your inventory file!")
     st.stop()
+
+# Optional: Normalize common column name variants from inventory to expected names
+COLUMN_NAME_MAP = {
+    "F GROUP": "FRAMEGROUP",
+    "COST PRICE": "COSTPRICE",
+    "EXCOSTPR": "EXCOSTPR",  # keep as-is; example placeholder
+    # Add other mappings if your inventory has alternate names
+}
+df = df.rename(columns={k: v for k, v in COLUMN_NAME_MAP.items() if k in df.columns})
 
 # Clean the DataFrame barcodes as strings
 df[barcode_col] = df[barcode_col].map(clean_barcode).astype(str)
@@ -200,7 +222,7 @@ if st.session_state.get("last_success_barcode"):
                 barcode_img.write(buffer)
                 buffer.seek(0)
                 st.image(buffer, caption="", width=120)
-            except Exception as e:
+            except Exception:
                 st.warning("Could not generate barcode image.")
         with details_col:
             st.markdown(
@@ -262,13 +284,16 @@ if st.session_state.get("confirm_clear_scanned_barcodes", False):
 # --- Optional: Show missing items ---
 def format_inventory_table(input_df):
     df_disp = input_df.copy()
-    cols = [col for col in VISIBLE_FIELDS if col in df_disp.columns]
-    df_disp = df_disp[cols]
+    # Ensure all columns exist, and cast to string
+    for col in df_disp.columns:
+        df_disp[col] = df_disp[col].astype(str)
     if "BARCODE" in df_disp.columns:
         df_disp["BARCODE"] = df_disp["BARCODE"].map(clean_barcode)
     if "RRP" in df_disp.columns:
         df_disp["RRP"] = df_disp["RRP"].apply(format_rrp).astype(str)
-    return clean_nans(df_disp)
+    # Reindex to the exact VISIBLE_FIELDS order, creating missing columns with empty strings
+    df_disp = df_disp.reindex(columns=VISIBLE_FIELDS).fillna("").replace("nan", "").replace(pd.NA, "")
+    return df_disp
 
 if st.checkbox("Show missing products (in inventory but not scanned)"):
     missing_df = df[~df[barcode_col].isin(scanned_barcodes)]
@@ -299,8 +324,10 @@ if not scanned_df.empty:
     scanned_df = scanned_df.assign(
         __order=scanned_df[barcode_col].apply(lambda x: present_barcodes.index(x))
     ).sort_values('__order').drop(columns='__order')
+    # Clean for display (format numeric-ish columns, etc.)
     display_df = clean_for_display(scanned_df)
-    display_df = display_df[[col for col in VISIBLE_FIELDS if col in display_df.columns]]
+    # Reindex so all requested headers appear in the table (missing columns will be empty)
+    display_df = display_df.reindex(columns=VISIBLE_FIELDS).fillna("").replace("nan", "").replace(pd.NA, "")
     st.markdown("### Scanned Products Table")
     st.dataframe(display_df, width='stretch', hide_index=True)
 
