@@ -1,4 +1,4 @@
- import streamlit as st
+import streamlit as st
 import pandas as pd
 import os
 import io
@@ -74,10 +74,19 @@ def format_rrp(val):
 def clean_for_display(df):
     df = df.copy()
     if "BARCODE" in df.columns:
-        df["BARCODE"] = df["BARCODE"].apply(lambda x: str(int(float(x))) if pd.notnull(x) and str(x).replace('.','',1).isdigit() and float(x).is_integer() else x)
+        df["BARCODE"] = df["BARCODE"].apply(
+            lambda x: str(int(float(x))) if pd.notnull(x)
+            and str(x).replace('.','',1).isdigit()
+            and float(x).is_integer() else x
+        )
     if "QUANTITY" in df.columns:
-        df["QUANTITY"] = df["QUANTITY"].apply(lambda x: str(int(float(x))) if pd.notnull(x) and str(x).replace('.','',1).isdigit() and float(x).is_integer() else x)
-    df = df.replace("nan", "").replace(pd.NA, "").replace(float("nan"), "")
+        df["QUANTITY"] = df["QUANTITY"].apply(
+            lambda x: str(int(float(x))) if pd.notnull(x)
+            and str(x).replace('.','',1).isdigit()
+            and float(x).is_integer() else x
+        )
+    # Replace common NaN-like values
+    df = df.replace("nan", "").replace(pd.NA, "")
     return df
 
 # --- Replace VISIBLE_FIELDS with the exact headers you requested ---
@@ -126,6 +135,10 @@ def empty_unfound_barcodes():
 # --- Load inventory ---
 INVENTORY_FOLDER = os.path.join(os.path.dirname(os.path.dirname(__file__)), "Inventory")
 inventory_files = [f for f in os.listdir(INVENTORY_FOLDER) if f.lower().endswith(('.xlsx', '.csv'))]
+if not inventory_files:
+    st.error("No inventory files found in the Inventory/ folder.")
+    st.stop()
+
 selected_file = inventory_files[0]
 if len(inventory_files) > 1:
     selected_file = st.selectbox("Select inventory file to use:", inventory_files)
@@ -140,6 +153,7 @@ def load_inventory():
         else:
             st.error("Unsupported inventory file type.")
             st.stop()
+        # Ensure columns are strings to avoid dtype surprises
         df = force_all_columns_to_string(df)
         return df
     else:
@@ -156,7 +170,6 @@ if barcode_col not in df.columns:
 COLUMN_NAME_MAP = {
     "F GROUP": "FRAMEGROUP",
     "COST PRICE": "COSTPRICE",
-    "EXCOSTPR": "EXCOSTPR",  # keep as-is; example placeholder
     # Add other mappings if your inventory has alternate names
 }
 df = df.rename(columns={k: v for k, v in COLUMN_NAME_MAP.items() if k in df.columns})
@@ -174,6 +187,10 @@ if "last_unfound_barcode" not in st.session_state:
     st.session_state["last_unfound_barcode"] = None
 if "last_success_barcode" not in st.session_state:
     st.session_state["last_success_barcode"] = None
+if "confirm_clear_scanned_barcodes" not in st.session_state:
+    st.session_state["confirm_clear_scanned_barcodes"] = False
+if "confirm_clear_unfound_barcodes" not in st.session_state:
+    st.session_state["confirm_clear_unfound_barcodes"] = False
 
 # --- Scan input using a form (clears on submit) ---
 with st.form("stocktake_scan_form", clear_on_submit=True):
@@ -193,6 +210,7 @@ with st.form("stocktake_scan_form", clear_on_submit=True):
             st.success(f"Added barcode: {cleaned}")
             st.session_state["last_unfound_barcode"] = None
             st.session_state["last_success_barcode"] = cleaned
+            # Trigger a rerun to update UI immediately
             if hasattr(st, "rerun"):
                 st.rerun()
             elif hasattr(st, "experimental_rerun"):
