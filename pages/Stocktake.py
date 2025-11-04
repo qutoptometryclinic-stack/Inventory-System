@@ -183,7 +183,7 @@ st.title("Stocktake - Scan Barcodes")
 # --- Shared scanned barcodes list ---
 scanned_barcodes = load_scanned_barcodes()
 
-# --- Track the last unfound barcode and last successful barcode in session state ---
+# --- Session state defaults ---
 if "last_unfound_barcode" not in st.session_state:
     st.session_state["last_unfound_barcode"] = None
 if "last_success_barcode" not in st.session_state:
@@ -192,6 +192,9 @@ if "confirm_clear_scanned_barcodes" not in st.session_state:
     st.session_state["confirm_clear_scanned_barcodes"] = False
 if "confirm_clear_unfound_barcodes" not in st.session_state:
     st.session_state["confirm_clear_unfound_barcodes"] = False
+# pending_duplicate holds dict: {"barcode": cleaned, "matching_barcode": existing_b, "signature": signature_tuple}
+if "pending_duplicate" not in st.session_state:
+    st.session_state["pending_duplicate"] = None
 
 # IDENTIFYING FIELDS used to detect same product (adjust as needed)
 IDENTIFYING_FIELDS = ["FRAMENUM", "MODEL", "MANUFACT", "SIZE", "FCOLOUR", "FRAMETYPE"]
@@ -205,11 +208,13 @@ with st.form("stocktake_scan_form", clear_on_submit=True):
         if cleaned == "":
             st.warning("Please scan or enter a barcode.")
             st.session_state["last_unfound_barcode"] = None
+            st.session_state["pending_duplicate"] = None
         elif cleaned in scanned_barcodes:
             st.warning("Barcode already scanned.")
             st.session_state["last_unfound_barcode"] = None
+            st.session_state["pending_duplicate"] = None
         elif cleaned in df[barcode_col].values:
-            # Found in inventory but not scanned yet
+            # Found in inventory but not scanned yet -> detect duplicate product signature
             product_row = df[df[barcode_col] == cleaned].iloc[0]
 
             def make_signature(row):
@@ -217,39 +222,30 @@ with st.form("stocktake_scan_form", clear_on_submit=True):
 
             new_sig = make_signature(product_row)
 
-            # Build signatures for already scanned products
+            # Build signatures for already scanned products (only those whose barcode maps into df)
             scanned_sigs = {}
             for b in scanned_barcodes:
                 if b in df[barcode_col].values:
                     r = df[df[barcode_col] == b].iloc[0]
                     scanned_sigs[b] = make_signature(r)
 
-            # Check if any scanned signature matches the new one
+            # Check for a matching signature among scanned items
             duplicate_found = False
+            matching_b = None
             for b, sig in scanned_sigs.items():
                 if sig == new_sig:
                     duplicate_found = True
-                    matching_barcode = b
+                    matching_b = b
                     break
 
             if duplicate_found:
-                st.warning("Product with the same framecode/details has already been scanned.")
-                col_yes, col_no = st.columns([1, 1])
-                with col_yes:
-                    if st.button("Add anyway (increment quantity)", key=f"force_add_{cleaned}"):
-                        scanned_barcodes.append(str(cleaned))
-                        save_scanned_barcodes(scanned_barcodes)
-                        st.success(f"Added barcode: {cleaned} — quantity incremented for matching product.")
-                        st.session_state["last_unfound_barcode"] = None
-                        st.session_state["last_success_barcode"] = cleaned
-                        if hasattr(st, "rerun"):
-                            st.rerun()
-                        elif hasattr(st, "experimental_rerun"):
-                            st.experimental_rerun()
-                with col_no:
-                    if st.button("Cancel", key=f"cancel_add_{cleaned}"):
-                        st.info("Add cancelled.")
-                        st.session_state["last_unfound_barcode"] = None
+                # Store pending duplicate so the confirmation UI can render outside the form
+                st.session_state["pending_duplicate"] = {
+                    "barcode": cleaned,
+                    "matching_barcode": matching_b,
+                    "signature": new_sig
+                }
+                st.warning("Product with the same framecode/details has already been scanned. Confirm below to increment quantity.")
             else:
                 # Normal add
                 scanned_barcodes.append(str(cleaned))
@@ -257,6 +253,7 @@ with st.form("stocktake_scan_form", clear_on_submit=True):
                 st.success(f"Added barcode: {cleaned}")
                 st.session_state["last_unfound_barcode"] = None
                 st.session_state["last_success_barcode"] = cleaned
+                st.session_state["pending_duplicate"] = None
                 if hasattr(st, "rerun"):
                     st.rerun()
                 elif hasattr(st, "experimental_rerun"):
@@ -264,6 +261,67 @@ with st.form("stocktake_scan_form", clear_on_submit=True):
         else:
             st.error("Barcode not found in inventory.")
             st.session_state["last_unfound_barcode"] = cleaned
+            st.session_state["pending_duplicate"] = None
+
+# --- Duplicate confirmation UI (renders outside the form so it persists) ---
+if st.session_state.get("pending_duplicate"):
+    pdict = st.session_state["pending_duplicate"]
+    pending_barcode = pdict["barcode"]
+    matching_barcode = pdict.get("matching_barcode")
+    st.markdown("### Duplicate product detected")
+    # Show a small product preview for both items if possible
+    try:
+        new_row = df[df[barcode_col] == pending_barcode].iloc[0]
+        existing_row = df[df[barcode_col] == matching_barcode].iloc[0] if matching_barcode in df[barcode_col].values else None
+        col_new, col_existing = st.columns([1, 1])
+        with col_new:
+            st.markdown("**New scan**")
+            st.write({
+                "BARCODE": pending_barcode,
+                "FRAMENUM": new_row.get("FRAMENUM", ""),
+                "MODEL": new_row.get("MODEL", ""),
+                "MANUFACT": new_row.get("MANUFACT", ""),
+                "SIZE": new_row.get("SIZE", ""),
+                "FCOLOUR": new_row.get("FCOLOUR", ""),
+                "FRAMETYPE": new_row.get("FRAMETYPE", "")
+            })
+        with col_existing:
+            st.markdown("**Already scanned**")
+            if existing_row is not None:
+                st.write({
+                    "BARCODE": matching_barcode,
+                    "FRAMENUM": existing_row.get("FRAMENUM", ""),
+                    "MODEL": existing_row.get("MODEL", ""),
+                    "MANUFACT": existing_row.get("MANUFACT", ""),
+                    "SIZE": existing_row.get("SIZE", ""),
+                    "FCOLOUR": existing_row.get("FCOLOUR", ""),
+                    "FRAMETYPE": existing_row.get("FRAMETYPE", "")
+                })
+            else:
+                st.write({"BARCODE": matching_barcode})
+    except Exception:
+        st.write("Could not render product preview.")
+
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        if st.button("Add anyway (increment quantity)", key=f"confirm_force_add_{pending_barcode}"):
+            scanned_barcodes.append(str(pending_barcode))
+            save_scanned_barcodes(scanned_barcodes)
+            st.success(f"Added barcode: {pending_barcode} — quantity incremented for the matching product.")
+            st.session_state["last_success_barcode"] = pending_barcode
+            st.session_state["pending_duplicate"] = None
+            if hasattr(st, "rerun"):
+                st.rerun()
+            elif hasattr(st, "experimental_rerun"):
+                st.experimental_rerun()
+    with c2:
+        if st.button("Cancel", key=f"cancel_force_add_{pending_barcode}"):
+            st.info("Add cancelled.")
+            st.session_state["pending_duplicate"] = None
+            if hasattr(st, "rerun"):
+                st.rerun()
+            elif hasattr(st, "experimental_rerun"):
+                st.experimental_rerun()
 
 # --- Show details for last successful barcode scanned (persists after rerun, compact layout) ---
 if st.session_state.get("last_success_barcode"):
