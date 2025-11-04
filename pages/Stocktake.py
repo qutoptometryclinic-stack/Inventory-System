@@ -85,7 +85,6 @@ def clean_for_display(df):
             and str(x).replace('.','',1).isdigit()
             and float(x).is_integer() else x
         )
-    # Replace common NaN-like values
     df = df.replace("nan", "").replace(pd.NA, "")
     return df
 
@@ -134,7 +133,10 @@ def empty_unfound_barcodes():
 
 # --- Load inventory ---
 INVENTORY_FOLDER = os.path.join(os.path.dirname(os.path.dirname(__file__)), "Inventory")
-inventory_files = [f for f in os.listdir(INVENTORY_FOLDER) if f.lower().endswith(('.xlsx', '.csv'))]
+inventory_files = []
+if os.path.exists(INVENTORY_FOLDER):
+    inventory_files = [f for f in os.listdir(INVENTORY_FOLDER) if f.lower().endswith(('.xlsx', '.csv'))]
+
 if not inventory_files:
     st.error("No inventory files found in the Inventory/ folder.")
     st.stop()
@@ -153,7 +155,6 @@ def load_inventory():
         else:
             st.error("Unsupported inventory file type.")
             st.stop()
-        # Ensure columns are strings to avoid dtype surprises
         df = force_all_columns_to_string(df)
         return df
     else:
@@ -192,6 +193,9 @@ if "confirm_clear_scanned_barcodes" not in st.session_state:
 if "confirm_clear_unfound_barcodes" not in st.session_state:
     st.session_state["confirm_clear_unfound_barcodes"] = False
 
+# IDENTIFYING FIELDS used to detect same product (adjust as needed)
+IDENTIFYING_FIELDS = ["FRAMENUM", "MODEL", "MANUFACT", "SIZE", "FCOLOUR", "FRAMETYPE"]
+
 # --- Scan input using a form (clears on submit) ---
 with st.form("stocktake_scan_form", clear_on_submit=True):
     scanned_barcode = st.text_input("Scan or enter barcode", key="stocktake_scan_input")
@@ -205,16 +209,58 @@ with st.form("stocktake_scan_form", clear_on_submit=True):
             st.warning("Barcode already scanned.")
             st.session_state["last_unfound_barcode"] = None
         elif cleaned in df[barcode_col].values:
-            scanned_barcodes.append(str(cleaned))
-            save_scanned_barcodes(scanned_barcodes)
-            st.success(f"Added barcode: {cleaned}")
-            st.session_state["last_unfound_barcode"] = None
-            st.session_state["last_success_barcode"] = cleaned
-            # Trigger a rerun to update UI immediately
-            if hasattr(st, "rerun"):
-                st.rerun()
-            elif hasattr(st, "experimental_rerun"):
-                st.experimental_rerun()
+            # Found in inventory but not scanned yet
+            product_row = df[df[barcode_col] == cleaned].iloc[0]
+
+            def make_signature(row):
+                return tuple(str(row.get(f, "")).strip() for f in IDENTIFYING_FIELDS)
+
+            new_sig = make_signature(product_row)
+
+            # Build signatures for already scanned products
+            scanned_sigs = {}
+            for b in scanned_barcodes:
+                if b in df[barcode_col].values:
+                    r = df[df[barcode_col] == b].iloc[0]
+                    scanned_sigs[b] = make_signature(r)
+
+            # Check if any scanned signature matches the new one
+            duplicate_found = False
+            for b, sig in scanned_sigs.items():
+                if sig == new_sig:
+                    duplicate_found = True
+                    matching_barcode = b
+                    break
+
+            if duplicate_found:
+                st.warning("Product with the same framecode/details has already been scanned.")
+                col_yes, col_no = st.columns([1, 1])
+                with col_yes:
+                    if st.button("Add anyway (increment quantity)", key=f"force_add_{cleaned}"):
+                        scanned_barcodes.append(str(cleaned))
+                        save_scanned_barcodes(scanned_barcodes)
+                        st.success(f"Added barcode: {cleaned} — quantity incremented for matching product.")
+                        st.session_state["last_unfound_barcode"] = None
+                        st.session_state["last_success_barcode"] = cleaned
+                        if hasattr(st, "rerun"):
+                            st.rerun()
+                        elif hasattr(st, "experimental_rerun"):
+                            st.experimental_rerun()
+                with col_no:
+                    if st.button("Cancel", key=f"cancel_add_{cleaned}"):
+                        st.info("Add cancelled.")
+                        st.session_state["last_unfound_barcode"] = None
+            else:
+                # Normal add
+                scanned_barcodes.append(str(cleaned))
+                save_scanned_barcodes(scanned_barcodes)
+                st.success(f"Added barcode: {cleaned}")
+                st.session_state["last_unfound_barcode"] = None
+                st.session_state["last_success_barcode"] = cleaned
+                if hasattr(st, "rerun"):
+                    st.rerun()
+                elif hasattr(st, "experimental_rerun"):
+                    st.experimental_rerun()
         else:
             st.error("Barcode not found in inventory.")
             st.session_state["last_unfound_barcode"] = cleaned
@@ -337,15 +383,38 @@ if st.checkbox("Show missing products (in inventory but not scanned)"):
 # --- Table of scanned products as ONE table, most recent scan on top ---
 ordered_barcodes = list(reversed(scanned_barcodes))
 present_barcodes = [b for b in ordered_barcodes if b in df[barcode_col].values]
-scanned_df = df[df[barcode_col].isin(present_barcodes)]
+scanned_df = df[df[barcode_col].isin(present_barcodes)].copy()
+
 if not scanned_df.empty:
+    # Preserve the scanning order by assigning an order index
     scanned_df = scanned_df.assign(
         __order=scanned_df[barcode_col].apply(lambda x: present_barcodes.index(x))
     ).sort_values('__order').drop(columns='__order')
-    # Clean for display (format numeric-ish columns, etc.)
+
+    # Compute scanned-counts per identifying signature (we use FRAMENUM as main key; fallback to BARCODE)
+    def get_key_for_row(row):
+        val = str(row.get("FRAMENUM", "")).strip()
+        return val if val != "" else str(row.get(barcode_col, "")).strip()
+
+    # Count how many scanned barcodes map to each key
+    key_counts = {}
+    for b in scanned_barcodes:
+        if b in df[barcode_col].values:
+            row = df[df[barcode_col] == b].iloc[0]
+            k = get_key_for_row(row)
+            key_counts[k] = key_counts.get(k, 0) + 1
+
+    # Prepare display dataframe and inject computed QUANTITY
     display_df = clean_for_display(scanned_df)
-    # Reindex so all requested headers appear in the table (missing columns will be empty)
     display_df = display_df.reindex(columns=VISIBLE_FIELDS).fillna("").replace("nan", "").replace(pd.NA, "")
+
+    if "QUANTITY" in display_df.columns:
+        computed_qtys = []
+        for _, r in scanned_df.iterrows():
+            k = get_key_for_row(r)
+            computed_qtys.append(str(key_counts.get(k, r.get("QUANTITY", ""))))
+        display_df["QUANTITY"] = computed_qtys
+
     st.markdown("### Scanned Products Table")
     st.dataframe(display_df, width='stretch', hide_index=True)
 
